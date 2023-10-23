@@ -1,100 +1,93 @@
 import argparse as prs
 import numpy as np
 import cv2 as cv
-from skimage.filters import threshold_multiotsu
+import os
+import random
 
 parser = prs.ArgumentParser('TrabProcImag', 'Coloring Thresholding')
 # parser.add_argument('filename')
-parser.add_argument('-f', '--function', required=True)
-parser.add_argument('-m', '--method')
 parser.add_argument('-i', '--image', required=True)
 parser.add_argument('-r', '--rpath', required=True)
 parser.add_argument('-n', '--number')
+parser.add_argument('-t', '--tries', default=10)
+parser.add_argument('-l', '--leniancy', default=5)
 args = parser.parse_args()
 
-def unpackgrayimg(img):
-    return img if type(img) != str else cv.imread(img,0)
-
-def grayThreshold(img_path):
-    num = int(args.number)
-    original_img = unpackgrayimg(img_path)
-    result = np.array(original_img)
-    step = 256 // num
-    for r in range(step,257,step):
-        l = r-step
-        result[np.logical_and((original_img >= l),(original_img < r))] = np.uint8((r // step) - 1)*np.uint8((255 // (num - 1)))
-
-    return result
-
-def colorThreshold(img_path):
-    (r,g,b) = cv.split(cv.imread(img_path))
-    r,g,b = grayThreshold(r), grayThreshold(g), grayThreshold(b)
-    return cv.merge((r,g,b))
-
-def otsuThreshold(img_path):
-    num = int(args.number)
-    original_img = unpackgrayimg(img_path)
-    resulting_thresholds = threshold_multiotsu(original_img, num)
-    (w,h) = original_img.shape
-    for i in range(w):
-        for j in range(h):
-            original_img[i][j] = resulting_thresholds[np.abs(resulting_thresholds - original_img[i][j]).argmin()]
+def lbg(img):
+    # img = cv.imread(img_path)
+    k = int(args.number)
+    k_centers = np.random.randint(0,255, (k,3)).astype(np.double)
+    tries = int(args.tries)
+    leniancy = args.leniancy
     
-    return original_img
-
-def colorOtsu(img_path):
-    (r,g,b) = cv.split(cv.imread(img_path))
-    r,g,b = otsuThreshold(r), otsuThreshold(g), otsuThreshold(b)
-    return cv.merge((r,g,b))
-
-def dithering(img_path):
-    img = unpackgrayimg(img_path).astype(np.int32)
-    num = np.int32(args.number)
-    step = 256 // num
-    arr_list = np.array([np.int32((r // step) - 1)*np.int32((255 // (num - 1))) for r in range(step,257,step)])
+    for i in range(0,tries):
+        k_new = [[0,0,0] for k_ in range(k)]
+        k_choices = [0 for k_ in range(k)]
+        
+        for p_x in img:
+            for c_col in p_x:
+                k_idx = np.abs(np.linalg.norm(k_centers-c_col,axis=1)).argmin()
+                k_new[k_idx] += c_col
+                k_choices[k_idx] += 1
+        
+        k_old = np.copy(k_centers)
     
-    xlim, ylim = len(img), len(img[0])
+        for k_ in range(k):
+            # print([0 if k_choices[k_] == 0 else i / k_choices[k_] for i in k_new[k_]])
+            k_centers[k_] = [0 if k_choices[k_] == 0 else i / k_choices[k_] for i in k_new[k_]]
+        # print(k_centers)
+        # exit()
+        k_old -= k_centers
+        k_old = np.linalg.norm(k_old,axis=1)
+        k_old = k_old[k_old.argmax()]
+        
+        if k_old < leniancy: break
     
-    for j in range(ylim):
-        for i in range(xlim):
-            val = img[i][j]
-            newval = arr_list[np.abs(arr_list - val).argmin()]
-            img[i][j] = newval
+    return np.round(k_centers)
+
+def kmeans(img, centers):
+    # img = cv.imread(img_path).astype(np.double)
+    
+    # centers = lbg(img)
+    # print(centers)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            img[i][j] = centers[np.abs(np.linalg.norm(centers - img[i][j],axis=1)).argmin()]
+    
+    return img.astype(np.uint8)
+
+def dithering(img, arr_list):
+    # img = cv.imread(img_path).astype(np.double)
+    # num = np.int32(args.number)
+    ylim, xlim = img.shape[0], img.shape[1]
+    for i in range(ylim):
+        for j in range(xlim):
+            val = img[i][j].copy()
+            newval = arr_list[np.abs(np.linalg.norm(arr_list - val, axis=1)).argmin()]
             qerr = val - newval
+            img[i][j] = newval
 
-            ylimflag = j+1 < ylim
-            
-            if i+1 < xlim:
-                img[i+1][j] = np.int32(img[i+1][j] + ((qerr * 7) // 16))
-            
-                if ylimflag:
-                    img[i+1][j+1] = np.int32(img[i+1][j+1] + ((qerr * 1) // 16))
-            
-            if i>0 and ylimflag:
-                img[i-1][j+1] = np.int32(img[i-1][j+1] + ((qerr * 3) // 16))
+            ylimflag = i+1 < ylim
             
             if ylimflag:
-                img[i][j+1] = np.int32(img[i][j+1] + ((qerr * 5) // 16))
+                img[i+1][j] = img[i+1][j] + ((qerr * 5) / 16)
+            
+                if j+1 < xlim:
+                    img[i+1][j+1] = img[i+1][j+1] + ((qerr * 1) / 16)
+            
+            if j>0 and ylimflag:
+                img[i+1][j-1] = img[i+1][j-1] + ((qerr * 3) / 16)
+            
+            if j+1 < xlim:
+                img[i][j+1] = img[i][j+1] + ((qerr * 7) / 16)
 
     return img.astype(np.uint8)
 
-def colorDither(img_path):
-    img = cv.imread(img_path)
-    (r,g,b) = cv.split(img)
-    r,g,b = dithering(r),dithering(g),dithering(b)
-    return cv.merge((r,g,b))
+img = cv.imread(args.image).astype(np.double)
+palette = lbg(img.copy())
+           
+os.makedirs(os.path.dirname(args.rpath.format('dither')), exist_ok=True)
+os.makedirs(os.path.dirname(args.rpath.format('kmeans')), exist_ok=True)
 
-function_dict = {
-    'gray_threshold': {
-        'simple': grayThreshold,   
-        'dither': dithering,
-        'otsu': otsuThreshold
-    },
-    'color_threshold': {
-        'simple': colorThreshold,
-        'dither': colorDither,
-        'otsu': colorOtsu
-    }
-}
-
-cv.imwrite(args.rpath, function_dict[args.function][args.method](args.image))
+cv.imwrite(args.rpath.format('kmeans'), kmeans(img.copy(), palette.copy()))
+cv.imwrite(args.rpath.format('dither'), dithering(img.copy(), palette.copy()))
