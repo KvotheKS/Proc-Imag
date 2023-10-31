@@ -75,7 +75,7 @@ def dithering(img, arr_list):
                 if j+1 < xlim:
                     img[i+1][j+1] = img[i+1][j+1] + ((qerr * 1) / 16)
             
-            if j>0 and ylimflag:
+            if j > 0 and ylimflag:
                 img[i+1][j-1] = img[i+1][j-1] + ((qerr * 3) / 16)
             
             if j+1 < xlim:
