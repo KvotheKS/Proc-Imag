@@ -28,11 +28,14 @@ def entopify(img, inverse=False, trapezium_rate = 0.2):
                 img2[i][j] = img[i][np.clip(np.int32((j - jl) * ratio), 0, img2.shape[1]-1)]
         else:
             for j in range(img2.shape[1]):
-                img2[i][j] = img[i][np.clip(np.int32(jl + j * ratio), 0, img2.shape[1] - 1)]
+                img2[i][j] = img[i][np.clip(np.int32(jl + j * ratio), 0, jr)]
     return img2
 
 def TA(A, B, C):
     return np.abs( (B[0] * A[1] - A[0] * B[1]) + (C[0] * B[1] - B[0] * C[1]) + (A[0] * C[1] - C[0] * A[1]) ) / 2
+
+def ib(A,B,C):
+    return A>=B and A<C
 
 def rotate(img, rot_matrix):
     # diag_size = math.ceil(math.sqrt(img.shape[0]**2 + img.shape[1]**2))
@@ -56,7 +59,7 @@ def rotate(img, rot_matrix):
 
     xlim, ylim = np.round(x_max-x_min).astype(np.int32), np.round(y_max-y_min).astype(np.int32)
 
-    r_img = np.zeros((ylim,xlim), dtype=np.uint8)
+    r_img = np.zeros((ylim+1,xlim+1), dtype=np.uint8)
     
     center = np.array([[xlim], [ylim]],dtype = np.double) / 2
 
@@ -68,7 +71,7 @@ def rotate(img, rot_matrix):
 
     ylim, xlim = r_img.shape[0], r_img.shape[1]
     rect_area = img.shape[0] * img.shape[1]
-
+    ylimorg, xlimorg = img.shape[0], img.shape[1]
     for i in range(ylim):
         for j in range(xlim):
             P = np.array([j,i], dtype=np.double)
@@ -76,8 +79,9 @@ def rotate(img, rot_matrix):
             if rect_area >= tr:
                 c_loc = np.matmul(inv, np.array([[j],[i]], dtype=np.double) - center) + disloc
                 c_loc = np.round(c_loc).astype(np.uint32)
-    
+
                 r_img[i][j] = img[np.clip(c_loc[1][0], 0, img.shape[0]-1)][np.clip(c_loc[0][0], 0, img.shape[1]-1)]
+    
     
     return r_img
 
@@ -90,17 +94,42 @@ r_rot = np.array([[math.cos(m4), -math.sin(m4)], [math.sin(m4), math.cos(m4)]])
 
 img = cv.imread(args.image,0).astype(np.uint8)
 
-r_img = rotate(entopify(img.copy()), r_rot)
 
-cv.imwrite(args.rpath.format(1), r_img)
+r1 = entopify(img.copy())
+
+
+r2 = rotate(r1.copy(), r_rot)
+
 
 # Inverse Operations
-r_img = rotate(r_img, l_rot)
-
+r3 = rotate(r2.copy(), l_rot)
 c1 = np.array([img.shape[0], img.shape[1]], dtype=np.int32) // 2
-c2 = np.array([r_img.shape[0], r_img.shape[1]], dtype=np.int32) // 2
-r_img = r_img[c2[0]-c1[0]:c1[0]+c2[0],c2[1]-c1[1]:c1[1]+c2[1]]
-r_img = entopify(r_img, True)
+c2 = np.array([r3.shape[0], r3.shape[1]], dtype=np.int32) // 2
+r3 = r3.copy()[c2[0]-c1[0]:c1[0]+c2[0],c2[1]-c1[1]:c1[1]+c2[1]]
+
+r4 = entopify(r3.copy(), True)
 
 
-cv.imwrite(args.rpath.format(2), r_img)
+# cv.imwrite(args.rpath.format(2), r_img)
+
+def sympad(img, y, x):
+    rimg = np.zeros((y,x))
+    yl, xl = (y - img.shape[0]) // 2, (x-img.shape[1]) // 2
+    rimg[yl:yl+img.shape[0],xl:xl+img.shape[1]] = img[:,:]
+    return rimg
+
+y = max(img.shape[0], r1.shape[0],r2.shape[0],r3.shape[0],r4.shape[0])
+x = max(img.shape[1], r1.shape[1],r2.shape[1],r3.shape[1],r4.shape[1])
+img = sympad(img, y, x)
+r1 = sympad(r1, y, x)
+r2 = sympad(r2, y, x)
+r3 = sympad(r3, y, x)
+r4 = sympad(r4, y, x)
+r5 = sympad(r4-img+128, y, x)
+
+cv.imwrite(args.rpath.format(0), img)
+cv.imwrite(args.rpath.format(1), r1)
+cv.imwrite(args.rpath.format(2), r2)
+cv.imwrite(args.rpath.format(3), r3)
+cv.imwrite(args.rpath.format(4), r4)
+cv.imwrite(args.rpath.format(5), r5)

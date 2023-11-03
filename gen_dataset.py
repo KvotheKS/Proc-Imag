@@ -1,7 +1,7 @@
 import os
 import time
 
-imgs = [ 'catedral', 'Mountain']
+imgs = [ 'lion', 'candyr', 'catedral']
 # types = ['kmeans', 'dither']
 color_number = [[4,8,16, 256], [2, 4, 8, 16]]
 
@@ -17,4 +17,4 @@ for i in range(len(imgs)):
     now_num = time.time()
     print(f'img {imgs[i]} d+k {now_num-p_test} ')
         
-    exit()
+    # exit()
